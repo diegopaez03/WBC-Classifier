@@ -9,3 +9,4 @@ pandas
 cv2
 numpy
 PIL
+libgl1-mesa-glx
