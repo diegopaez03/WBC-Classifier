@@ -1,0 +1,11 @@
+Clase,Precisión,Recall,mAP@0.5,mAP@0.5:0.95
+band cell,0.65,1.00,0.98,0.97
+basophil,0.94,1.00,0.99,0.99
+blast cell,1.00,1.00,0.99,0.98
+eosinophil,1.00,0.95,0.99,0.99
+lymphocyte,0.87,1.00,0.99,0.98
+monocyte,0.99,0.92,0.98,0.97
+neutrophil,1.00,0.93,0.99,0.96
+promyelocyte,1.00,0.95,0.99,0.95
+myelocyte,0.93,1.00,0.98,0.94
+metamyelocyte,1.00,0.52,0.90,0.88

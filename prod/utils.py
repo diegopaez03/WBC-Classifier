@@ -5,6 +5,7 @@ from collections import Counter
 import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
+from PIL import Image
 
 # utils.py
 class_names = [
@@ -13,17 +14,49 @@ class_names = [
     "Mielocito", "Metamielocito"
 ]
 
+# Definición directa de colores en BGR (no RGBA)
+red_colors = [
+    (255, 0, 0),   # Rojo puro (más claro) - Ahora es (B=255, G=0, R=0) para un color rojo
+    (220, 0, 0),
+    (180, 0, 0),
+    (140, 0, 0),
+    (100, 0, 0)
+]
+
+green_colors = [
+    (0, 255, 0),   # Verde puro (más claro)
+    (0, 220, 0),   #
+    (0, 180, 0),   #
+    (0, 140, 0),   #
+    (0, 100, 0)    # Verde oscuro
+]
+
+# Rearmar lista final según el orden de class_names
+colors_ordered = [
+    red_colors[0],    # Neutrófilo inmaduro
+    green_colors[0],  # Basófilo
+    red_colors[1],    # Blasto
+    green_colors[1],  # Eosinófilo
+    green_colors[2],  # Linfocito
+    green_colors[3],  # Monocito
+    green_colors[4],  # Neutrófilo
+    red_colors[2],    # Promielocito
+    red_colors[3],    # Mielocito
+    red_colors[4],    # Metamielocito
+]
+
+
 def load_model(model_path):
     """Carga un modelo YOLO entrenado desde un archivo .pt/.pth"""
     model = YOLO(model_path)
     return model
 
-def predict_image(model, image_path, conf_threshold=0.25):
+def predict_image(model, image_path, conf_threshold=0.35, iou_threshold=0.4):
     """
     Ejecuta la predicción sobre una imagen.
     Retorna la imagen original, resultados de predicción y el tensor de detecciones.
     """
-    results = model(image_path, conf=conf_threshold)
+    results = model(image_path, conf=conf_threshold, iou=iou_threshold)
     result = results[0]  # Tomar la primer predicción del batch
     return result.orig_img, result, result.boxes
 
@@ -42,6 +75,7 @@ def plot_predictions(image, boxes, class_names=class_names, color=(0, 255, 0), t
         conf = float(box.conf[0].item())
         label = class_names[cls_id] if cls_id < len(class_names) else str(cls_id)
         label += f" {conf:.2f}"
+        color = colors_ordered[cls_id % len(colors_ordered)]
 
         # Dibujar rectángulo
         cv2.rectangle(img, (xyxy[0], xyxy[1]), (xyxy[2], xyxy[3]), color, thickness)
@@ -54,7 +88,7 @@ def plot_predictions(image, boxes, class_names=class_names, color=(0, 255, 0), t
             img,
             (xyxy[0], xyxy[1] - text_size[1] - 10),
             (xyxy[0] + text_size[0], xyxy[1]),
-            color,
+            (255, 255, 255),  # Fondo blanco
             -1,
         )
         cv2.putText(
@@ -68,7 +102,6 @@ def plot_predictions(image, boxes, class_names=class_names, color=(0, 255, 0), t
         )
 
     return img
-
 
 def count_detected_classes(boxes, class_names=class_names):
     """
@@ -134,71 +167,89 @@ def build_class_summary_table(pred_result, class_names):
 def show_class_distribution(predictions, class_names):
     class_ids = [int(cls.item()) for cls in predictions.boxes.cls]
     class_counts = Counter(class_ids)
-    
+
     classes = [class_names[i] for i in class_counts]
     counts = list(class_counts.values())
 
-    tab1, tab2 = st.tabs(["📊 Gráfico de Barras", "🥧 Gráfico de Torta"])
+    fig_pie, ax = plt.subplots()
 
-    with tab1:
-        fig_bar, ax = plt.subplots()
-        ax.bar(classes, counts, color='purple')
-        ax.set_xlabel("Clases")
-        ax.set_ylabel("Cantidad")
-        ax.set_title("Distribución por clase")
-        ax.set_xticklabels(classes, rotation=45)
-        st.pyplot(fig_bar)
+    # 1. Quitar el color de fondo del gráfico
+    fig_pie.patch.set_alpha(0.0) # Hace el fondo de la figura transparente
+    ax.patch.set_alpha(0.0)    # Hace el fondo del área de los ejes transparente
 
-    with tab2:
-        fig_pie, ax = plt.subplots()
-        ax.pie(counts, labels=classes, autopct="%1.1f%%", startangle=90)
-        ax.axis("equal")
-        st.pyplot(fig_pie)
+    wedges, texts = ax.pie(counts,
+                           startangle=90,
+                           radius=0.8,
+                           wedgeprops={"edgecolor": "white", 'linewidth': 0.5, 'antialiased': True},
+                           shadow=True)
 
-descripcion1 = """
-## Leucocitos maduros
+    ax.axis("equal")
 
-### 1. Monocito
-Fagocita microorganismos y se convierte en macrófago en tejidos.  
-Núcleo en forma de riñón.
+    # 3. Mostrar porcentajes en la leyenda
+    total = sum(counts)
+    labels_with_percentages = []
+    for i, (cls_name, count_val) in enumerate(zip(classes, counts)):
+        percentage = (count_val / total) * 100
+        labels_with_percentages.append(f'{cls_name}: {percentage:.1f}%') # Formato a un decimal
 
-### 2. Basófilo
-Participa en reacciones alérgicas y liberación de histamina.  
-Núcleo lobulado y gránulos oscuros.
+    # Creamos la leyenda con los nuevos labels
+    ax.legend(wedges, labels_with_percentages,
+              title="Clases",
+              loc="lower center",
+              bbox_to_anchor=(1, 0, 0.5, 1))
 
-### 3. Neutrófilo
-Principal célula en infecciones bacterianas.  
-Fagocita patógenos; núcleo multilobulado.
+    st.pyplot(fig_pie)
 
-### 4. Eosinófilo
-Combate parásitos y participa en alergias.  
-Tiene gránulos rosados y núcleo bilobulado.
+def plot_selected_class(image: Image.Image, result, class_names, selected_class: str, colors):
+    img = np.array(image)
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    h, w = img.shape[:2]
 
-### 5. Linfocito
-Responsable de la respuesta inmune específica (linfocitos B y T).  
-Núcleo grande y redondo, citoplasma escaso.
-"""
+    selected_class_id = class_names.index(selected_class)
 
-descripcion2 = """
-## Leucocitos inmaduros
+    for box, cls, conf in zip(result.boxes.xywh, result.boxes.cls, result.boxes.conf):
+        class_id = int(cls.item())
+        if class_id != selected_class_id:
+            continue
 
-### 1. Mielocito
-Célula más madura que el promielocito.  
-Comienza a mostrar gránulos específicos según su tipo final.
+        x_center, y_center, box_w, box_h = box.tolist()
 
-### 2. Metamielocito
-Precursor directo de la célula en banda.  
-Núcleo en forma de riñón, no segmentado todavía.
+        x1 = int((x_center - box_w / 2))
+        y1 = int((y_center - box_h / 2))
+        x2 = int((x_center + box_w / 2))
+        y2 = int((y_center + box_h / 2))
 
-### 3. Neutrófilo inmaduro
-Célula en banda con núcleo en forma de banda o bastón.  
-Indica una respuesta activa del sistema inmune (infección aguda).
+        label = f"{class_names[class_id]} {conf.item():.2f}"
+        color = colors[class_id]
 
-### 4. Blasto
-Célula madre inmadura precursora de leucocitos.  
-En exceso puede indicar leucemia.
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, thickness=7)
+        cv2.putText(
+            img, label, (x1, y1 - 10),
+            cv2.FONT_HERSHEY_SIMPLEX, 2.0, (0, 0, 0), 3, lineType=cv2.LINE_AA
+        )
 
-### 5. Promielocito
-Etapa inmadura en la línea de los granulocitos.  
-Gran cantidad de gránulos primarios; precursor del mielocito.
-"""
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(img_rgb)
+
+descripciones = {
+    "Neutrófilo inmaduro": "Los **neutrófilos** inmaduros, como las bandas o células en banda, suelen aparecer en la sangre periférica durante infecciones bacterianas agudas. Su presencia puede indicar una respuesta inflamatoria activa o una 'desviación a la izquierda' en la médula ósea, lo que sugiere que el cuerpo está produciendo neutrófilos rápidamente para combatir una infección o proceso inflamatorio severo.",
+
+    "Basófilo": "Los **basófilos** son los glóbulos blancos menos abundantes. Participan en reacciones alérgicas y en la liberación de histamina, lo que provoca síntomas como picazón e inflamación. Un aumento en basófilos puede observarse en enfermedades alérgicas, mieloproliferativas crónicas o ciertas infecciones virales. Su función aún no se comprende completamente, pero se relacionan con procesos inmunitarios complejos.",
+
+    "Blasto": "Los **blastos** son células precursoras inmaduras que normalmente no deben encontrarse en la sangre periférica. Su presencia puede ser signo de leucemia aguda u otros síndromes mielodisplásicos. Identificar blastos es crítico para el diagnóstico temprano de enfermedades hematológicas graves. Su detección debe conducir a estudios adicionales como aspirado medular o inmunofenotipificación.",
+
+    "Eosinófilo": "Los **eosinófilos** intervienen en respuestas alérgicas, parasitarias y procesos inflamatorios. Contienen gránulos citotóxicos que se liberan en presencia de alérgenos o parásitos. Su aumento (eosinofilia) puede observarse en asma, rinitis, infecciones parasitarias, y enfermedades autoinmunes. También pueden formar parte de la respuesta inflamatoria en algunos cánceres. Su observación ayuda al diagnóstico diferencial clínico.",
+
+    "Linfocito": "Los **linfocitos** forman parte clave del sistema inmune adaptativo. Existen linfocitos B, T y NK, que cumplen funciones en la producción de anticuerpos, la destrucción de células infectadas o tumorales y la regulación inmune. Su aumento puede indicar infecciones virales, leucemias linfoides o enfermedades autoinmunes. Su recuento y morfología son fundamentales para el diagnóstico hematológico.",
+
+    "Monocito": "Los **monocitos** son los mayores leucocitos y se transforman en macrófagos cuando migran a tejidos. Participan en la fagocitosis de patógenos, presentación de antígenos y modulación de la respuesta inmune. Su aumento puede observarse en infecciones crónicas, inflamaciones persistentes o trastornos hematológicos. También se asocian con recuperación de infecciones agudas y actividad inmunitaria basal.",
+
+    "Neutrófilo": "Los **neutrófilos** son los glóbulos blancos más abundantes. Actúan como primera línea de defensa ante infecciones bacterianas mediante fagocitosis y liberación de enzimas antimicrobianas. Un aumento sugiere infección o inflamación aguda, mientras que una disminución puede asociarse a inmunodeficiencia o daño medular. Su conteo es clave en el hemograma y análisis clínicos rutinarios.",
+
+    "Promielocito": "Los **promielocitos** son precursores de los granulocitos. Su presencia en sangre periférica es anormal y puede indicar leucemia promielocítica aguda (LPA), una emergencia hematológica que requiere tratamiento urgente. Contienen abundantes gránulos y pueden participar en coagulopatías si proliferan en exceso. Detectarlos precozmente permite intervenir antes de complicaciones graves como la coagulación intravascular diseminada.",
+
+    "Mielocito": "Los **mielocitos** son etapas intermedias en la maduración de granulocitos. Normalmente residen en la médula ósea. Su presencia en sangre puede indicar una regeneración acelerada de neutrófilos, como en infecciones severas o recuperación posquimioterapia. También se observan en síndromes mieloproliferativos. Son indicadores útiles del estado funcional de la médula ósea.",
+
+    "Metamielocito": "Los **metamielocitos** preceden a los neutrófilos maduros. Su hallazgo en sangre sugiere una liberación acelerada de granulocitos desde la médula, generalmente en respuesta a infecciones agudas, estrés inflamatorio o daño medular. Aunque menos inmaduros que los mielocitos, su presencia aún indica actividad hematopoyética anormal. Su proporción ayuda a interpretar la respuesta inmune del paciente."
+}
+

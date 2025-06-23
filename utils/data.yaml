@@ -1,9 +1,0 @@
-path: RV-PBS_YOLO
-train: images/train
-val: images/val
-nc: 10
-names: [
-    "band cell", "basophil", "blast cell", "eosinophil",
-    "lymphocyte", "monocyte", "neutrophil", "promyelocyte",
-    "myelocyte", "metamyelocyte"
-]
